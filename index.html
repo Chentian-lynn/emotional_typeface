@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Expression Detection Demo</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #00000000;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* 图片容器，始终等比缩放居中 */
+    #bg-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #00000000;
+    }
+
+    /* video 在图片下面 */
+    #video {
+      position: absolute;
+      border-radius: 8px;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    #bg {
+      max-width: 100%;
+      max-height: 100%;
+      height: auto;
+      width: auto;
+      display: block;
+      opacity: 1;
+    }
+
+    /* canvas 叠加在图片上 */
+    #sdfCanvas {
+      position: absolute;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    #keyboard {
+      position: absolute;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    #expressions {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(20, 20, 20, 0.8);
+      color: #eee;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: sans-serif;
+    }
+
+    #expressionBox {
+      position: absolute;
+      width: 100%; 
+      height: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: rgba(20, 20, 20, 0.8);
+      background: rgba(255, 255, 255, 0.0);
+      font-family: 'Press Start 2P', monospace; /* 像素字体 */
+      letter-spacing: 1px;                       /* 稍微增加字间距，像素风更清晰 */
+      image-rendering: pixelated;                /* 强制像素化渲染 */
+    }
+
+    /* 没有检测到人脸的样式 */
+    #expressionBox.no-face {
+      font-size: 14px;
+      text-align: center;
+    }
+
+    /* 检测到表情时变成 4 行 × 2 列 等宽网格 */
+    #expressionBox.face-detected {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr); /* 2列 */
+      grid-auto-rows: auto;                 /* 自动行高 */
+      row-gap: 0px;
+      column-gap: 10px;
+      font-size: 12px;                      /* 让文本适应元素 */
+      align-items: start;
+      justify-items: start;
+      overflow: hidden;                     /* 禁止撑出容器 */
+    }
+
+    #bgwall {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* 保持比例填满屏幕 */
+      z-index: -1;
+      /* 放在所有内容后面 */
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="bg-container">
+    <video id="bgwall" autoplay loop muted playsinline></video>
+
+    <!-- <video id="video" autoplay muted></video> -->
+    <canvas id="sdfCanvas"></canvas>
+    <canvas id="keyboard"></canvas>
+
+    <div id="expressionBox">Loading...</div>
+    <img id="bg" src="bg.png" alt="背景图" />
+    <video id="video" autoplay muted></video>
+  </div>
+
+  <script type="module">
+    import { setupSDFRenderer } from './blendSDF.js';
+    import { setupKeyboardRenderer } from './keyboard.js';
+
+    const BG_WIDTH = 7678, BG_HEIGHT = 4504;
+
+    // 定义两个框在原图中的位置（单位：像素）
+    const VIDEO_BOX = { x: 3250, y: 500, w: 1800, h: 1000 };
+    const CANVAS_BOX = { x: 2072, y: 1150, w: 3600, h: 2000 };
+    const KEYBOARD_BOX = { x: 2072, y: 3200, w: 3600, h: 1000 };
+    const EXPRESSION_BOX = { x: 4200, y: 200, w: 1300, h: 750 };
+
+    async function init() {
+      const canvas = document.getElementById("sdfCanvas");
+      const keyboard = document.getElementById("keyboard");
+
+      const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+
+      const video = document.getElementById('video');
+      const bg = document.getElementById('bg');
+      const bgVideo = document.getElementById('bgwall');
+      bgVideo.src = 'bgwall.mp4';
+      const container = document.getElementById('bg-container');
+      const expressionBox = document.getElementById('expressionBox');
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert("请在 HTTPS 或 localhost 环境下运行以访问摄像头。");
+        return;
+      }
+
+      async function initVideo(video) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+        video.srcObject = stream;
+
+        await new Promise(resolve => {
+          const check = setInterval(() => {
+            if (video.readyState >= 2 && video.videoWidth > 0) {
+              clearInterval(check);
+              resolve();
+            }
+          }, 50);
+        });
+      }
+
+      // 摄像头
+      // const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+      // video.srcObject = stream;
+      await initVideo(video);
+
+      // 更新子元素位置，使其贴合背景图
+      function updateLayout() {
+        const rect = bg.getBoundingClientRect();
+        const scaleX = rect.width / BG_WIDTH;
+        const scaleY = rect.height / BG_HEIGHT;
+        const offsetX = rect.left;
+        const offsetY = rect.top;
+
+        // 假设 VIDEO_BOX.h 表示原图中的“高度”，xy 是中心点
+        const scaledHeight = VIDEO_BOX.h * scaleY;
+        const aspect = video.videoWidth / video.videoHeight || (16 / 9); // 默认16:9
+        const scaledWidth = scaledHeight * aspect;
+
+        // 中心点定位
+        const centerX = offsetX + VIDEO_BOX.x * scaleX;
+        const centerY = offsetY + VIDEO_BOX.y * scaleY;
+
+        // 设置样式
+        video.style.position = "absolute";
+        video.style.width = `${scaledWidth}px`;
+        video.style.height = `${scaledHeight}px`;
+        video.style.left = `${centerX}px`;
+        video.style.top = `${centerY}px`;
+        video.style.transform = "translate(-50%, -50%)";
+        video.style.objectFit = "cover"; // 保持比例裁剪
+        video.style.zIndex = -1;
+
+        // canvas
+        canvas.style.left = `${offsetX + CANVAS_BOX.x * scaleX}px`;
+        canvas.style.top = `${offsetY + CANVAS_BOX.y * scaleY}px`;
+        canvas.style.width = `${CANVAS_BOX.w * scaleX}px`;
+        canvas.style.height = `${CANVAS_BOX.h * scaleY}px`;
+        canvas.style.zIndex = -1;
+
+        // keyboard
+        keyboard.style.left = `${offsetX + KEYBOARD_BOX.x * scaleX}px`;
+        keyboard.style.top = `${offsetY + KEYBOARD_BOX.y * scaleY}px`;
+        keyboard.style.width = `${KEYBOARD_BOX.w * scaleX}px`;
+        keyboard.style.height = `${KEYBOARD_BOX.h * scaleY}px`;
+
+        // expressionBox
+        expressionBox.style.width = `${EXPRESSION_BOX.w * scaleX}px`;
+        expressionBox.style.height = `${EXPRESSION_BOX.h * scaleY}px`;
+        expressionBox.style.left = `${offsetX + EXPRESSION_BOX.x * scaleX}px`;
+        expressionBox.style.top = `${offsetY + EXPRESSION_BOX.y * scaleY}px`;
+      }
+
+      window.addEventListener('resize', updateLayout);
+      bg.addEventListener('load', updateLayout);
+      updateLayout();
+
+      const { trigger, render } = await setupSDFRenderer(canvas, [
+        "neutral.png",
+        "happy.png",
+        "sad.png",
+        "angry.png",
+        "fearful.png",
+        "disgusted.png",
+        "surprised.png"
+      ]);
+
+      const { render: key_render, keyDown, keyUp } = await setupKeyboardRenderer(keyboard, [
+        "neutral.png",
+        "happy.png",
+        "sad.png",
+        "angry.png",
+        "fearful.png",
+        "disgusted.png",
+        "surprised.png"
+      ]);
+
+
+      let lastExpression = null;
+
+      {
+        const overlay = faceapi.createCanvasFromMedia(video);
+        overlay.style.left = video.style.left;
+        overlay.style.top = video.style.top;
+        overlay.style.width = video.style.width;
+        overlay.style.height = video.style.height;
+        overlay.style.position = 'absolute';
+        overlay.style.transform = "translate(-50%, -50%)";
+        overlay.style.objectFit = "cover"; // 保持比例裁剪
+        container.append(overlay);
+
+        const displaySize = { width: video.videoWidth, height: video.videoHeight };
+        faceapi.matchDimensions(overlay, displaySize);
+
+        setInterval(async () => {
+          const detections = await faceapi
+            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 }))
+            .withFaceExpressions();
+
+          const resized = faceapi.resizeResults(detections, displaySize);
+          const ctx = overlay.getContext('2d', { willReadFrequently: true });
+          ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+          for (const det of resized) {
+            const { x, y, width, height } = det.detection.box;
+
+            // ✅ 加粗线条
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 6;
+            ctx.strokeRect(x, y, width, height);
+
+            // ✅ 绘制当前表情（最可能的一个）
+            const expr = Object.entries(det.expressions).sort((a, b) => b[1] - a[1])[0];
+            ctx.font = "24px 'Microsoft YaHei', sans-serif";
+            ctx.fillStyle = "rgba(255,255,255,0.95)";
+            ctx.fillText(`${expr[0]} ${(expr[1] * 100).toFixed(1)}%`, x + 5, y - 10);
+          }
+          if (detections.length > 0) {
+              const expr = detections[0].expressions;
+              lastExpression = expr;
+
+              let html = "";
+              html += `<div class="expr-item"> :${Math.floor(expr.happy * 100)}%</div>`;
+              html += `<div class="expr-item"> :${Math.floor(expr.sad * 100)}%</div>`;
+              html += `<div class="expr-item"> :${Math.floor(expr.angry * 100)}%</div>`;
+              html += `<div class="expr-item"> :${Math.floor(expr.surprised * 100)}%</div>`;
+              html += `<div class="expr-item"> :${Math.floor(expr.fearful * 100)}%</div>`;
+              html += `<div class="expr-item"> :${Math.floor(expr.disgusted * 100)}%</div>`;
+
+              expressionBox.classList.remove("no-face");
+              expressionBox.classList.add("face-detected");
+              expressionBox.innerHTML = html;
+
+          } else {
+              lastExpression = null;
+              let html = "";
+              html += `<div class="expr-item"> :0%</div>`;
+              html += `<div class="expr-item"> :0%</div>`;
+              html += `<div class="expr-item"> :0%</div>`;
+              html += `<div class="expr-item"> :0%</div>`;
+              html += `<div class="expr-item"> :0%</div>`;
+              html += `<div class="expr-item"> :0%</div>`;
+              expressionBox.innerHTML = html;
+          }
+          // if (detections.length > 0) {
+          //   const expr = detections[0].expressions;
+          //   lastExpression = expr;
+          //   let html = "";
+          //   for (let [k, v] of Object.entries(expr)) {
+          //     html += `${k}: ${(v * 100).toFixed(2)}%<br>`;
+          //   }
+          //   expressionBox.innerHTML = html;
+          // } else {
+          //   lastExpression = null;
+          //   expressionBox.innerHTML = "未检测到人脸";
+          // }
+        }, 300);
+
+        setInterval(() => render(), 10);
+        setInterval(() => key_render(lastExpression), 10);
+
+        //按键触发trigger
+        window.addEventListener('keydown', (e) => {
+          const key = e.key.toUpperCase();
+          keyDown(key);
+          trigger(key, lastExpression);
+        });
+        window.addEventListener('keyup', (e) => {
+          const key = e.key.toUpperCase();
+          keyUp(key);
+        });
+      }
+    }
+
+    window.addEventListener('load', init);
+
+  </script>
+</body>
+
+</html>

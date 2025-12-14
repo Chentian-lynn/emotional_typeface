@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>图片坐标查看器</title>
+  <style>
+    body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #111; color: #fff; }
+    img { max-width: 90%; max-height: 90%; display: block; }
+    #info { position: fixed; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <input type="file" id="file" accept="image/*" style="position:fixed;top:10px;left:10px;">
+  <div id="info">x: -, y: -</div>
+  <img id="img" />
+
+  <script>
+    const img = document.getElementById('img');
+    const info = document.getElementById('info');
+    const fileInput = document.getElementById('file');
+
+    fileInput.onchange = e => {
+      const file = e.target.files[0];
+      if (file) img.src = URL.createObjectURL(file);
+    };
+
+    img.addEventListener('mousemove', e => {
+      const rect = img.getBoundingClientRect();
+      const xRatio = ((e.clientX - rect.left) / rect.width).toFixed(3);
+      const yRatio = ((e.clientY - rect.top) / rect.height).toFixed(3);
+      info.textContent = `x: ${xRatio}, y: ${yRatio}`;
+    });
+  </script>
+</body>
+</html>
