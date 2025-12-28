@@ -21,13 +21,20 @@ def transfer_sdf(img):
 # 可选：可视化保存
 # cv2.imwrite('sdf_visual.png', ((sdf + 1) / 2 * 255).astype(np.uint8))
 
-letter_list = ['H']
+letter_list = ['Z']
 emotion_zh = ['高兴', '恶心', '生气', '伤心', '惊讶', '惊恐', '中立']
 emotion_en = ['happy', 'disgusted', 'angry', 'sad', 'surprised', 'fearful', 'neutral']
 for letter in letter_list:
     for i, emotion in enumerate(emotion_zh):
         # 读取灰度图（黑白）
-        img = cv2.imread(f'origin/{letter}/{letter} {emotion}.png', cv2.IMREAD_GRAYSCALE)
+        path = f'origin/{letter}/{letter} {emotion}.png'
+        if not cv2.haveImageReader(path):
+            path = f'origin/{letter}/{letter} {emotion}.jpg'
+        if not cv2.haveImageReader(path):
+            path = f'origin/{letter}/ {letter} {emotion}.jpg'
+        if not cv2.haveImageReader(path):
+            path = f'origin/{letter}/ {letter} {emotion}.png'
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         sdf = transfer_sdf(img)
         cv2.imwrite(f'sdf/{letter}_{emotion_en[i]}.png', sdf)
 

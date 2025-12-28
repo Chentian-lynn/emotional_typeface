@@ -5,7 +5,7 @@ import { initGL, createProgram, createTexture } from './glUtils.js';
 
 const EMOTIONS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
 
-
+const KEYS = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
 
 export async function setupSDFRenderer(canvas, imageNames) { 
   const gl = initGL(canvas);
@@ -83,7 +83,7 @@ export async function setupSDFRenderer(canvas, imageNames) {
 
   // 纹理加载
   const texture_list = new Map();
-  for (const key of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+  for (const key of KEYS) {
     // console.log('Loading textures for key:', key);
     const textures = await Promise.all(imageNames.map(name => createTexture(gl, 'sdf/' + key + '_' + name)));
     texture_list.set(key, textures);
@@ -188,7 +188,7 @@ export async function setupSDFRenderer(canvas, imageNames) {
       render();
       return;
     }
-    if (! ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', ' '].includes(key)) {
+    if (! KEYS.includes(key) && key !== ' ') {
       return;
     }
 
@@ -202,7 +202,7 @@ export async function setupSDFRenderer(canvas, imageNames) {
   }
 
   function updateBindTexturesForKey(key) {
-    if (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].includes(key)) {
+    if (KEYS.includes(key)) {
       // console.log('Binding textures for key:', key);
       const textures = texture_list.get(key);
       textures.forEach((tex, i) => {
