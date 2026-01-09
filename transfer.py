@@ -21,7 +21,7 @@ def transfer_sdf(img):
 # 可选：可视化保存
 # cv2.imwrite('sdf_visual.png', ((sdf + 1) / 2 * 255).astype(np.uint8))
 
-letter_list = ['Z']
+letter_list = ['K']
 emotion_zh = ['高兴', '恶心', '生气', '伤心', '惊讶', '惊恐', '中立']
 emotion_en = ['happy', 'disgusted', 'angry', 'sad', 'surprised', 'fearful', 'neutral']
 for letter in letter_list:
